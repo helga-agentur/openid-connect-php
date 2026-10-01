@@ -31,8 +31,8 @@ namespace Jumbojett;
  * It can be downloaded from: http://phpseclib.sourceforge.net/
  */
 
-if (!class_exists('\phpseclib\Crypt\RSA') && !class_exists('Crypt_RSA')) {
-    user_error('Unable to find phpseclib Crypt/RSA.php.  Ensure phpseclib is installed and in include_path before you include this file');
+if (!class_exists('\phpseclib3\Crypt\PublicKeyLoader')) {
+    user_error('Unable to find phpseclib3. Ensure phpseclib/phpseclib ^3.0 is installed before you include this file');
 }
 
 /**
@@ -874,36 +874,20 @@ class OpenIDConnectClient
      * @throws OpenIDConnectClientException
      */
     private function verifyRSAJWTsignature($hashtype, $key, $payload, $signature, $signatureType) {
-        if (!class_exists('\phpseclib\Crypt\RSA') && !class_exists('Crypt_RSA')) {
-            throw new OpenIDConnectClientException('Crypt_RSA support unavailable.');
+        if (!class_exists('\phpseclib3\Crypt\PublicKeyLoader')) {
+            throw new OpenIDConnectClientException('phpseclib3 RSA support unavailable.');
         }
         if (!(property_exists($key, 'n') && property_exists($key, 'e'))) {
             throw new OpenIDConnectClientException('Malformed key object');
         }
 
-        /* We already have base64url-encoded data, so re-encode it as
-           regular base64 and use the XML key format for simplicity.
-        */
-        $public_key_xml = "<RSAKeyValue>\r\n".
-            '  <Modulus>' . b64url2b64($key->n) . "</Modulus>\r\n" .
-            '  <Exponent>' . b64url2b64($key->e) . "</Exponent>\r\n" .
-            '</RSAKeyValue>';
-        if(class_exists('Crypt_RSA', false)) {
-            $rsa = new Crypt_RSA();
-            $rsa->setHash($hashtype);
-            if ($signatureType === 'PSS') {
-                $rsa->setMGFHash($hashtype);
-            }
-            $rsa->loadKey($public_key_xml, Crypt_RSA::PUBLIC_FORMAT_XML);
-            $rsa->signatureMode = $signatureType === 'PSS' ? Crypt_RSA::SIGNATURE_PSS : Crypt_RSA::SIGNATURE_PKCS1;
-        } else {
-            $rsa = new \phpseclib\Crypt\RSA();
-            $rsa->setHash($hashtype);
-            if ($signatureType === 'PSS') {
-                $rsa->setMGFHash($hashtype);
-            }
-            $rsa->loadKey($public_key_xml, \phpseclib\Crypt\RSA::PUBLIC_FORMAT_XML);
-            $rsa->signatureMode = $signatureType === 'PSS' ? \phpseclib\Crypt\RSA::SIGNATURE_PSS : \phpseclib\Crypt\RSA::SIGNATURE_PKCS1;
+        // $key->n and $key->e are already base64url-encoded, same as the JWK spec expects.
+        $jwk = json_encode(['kty' => 'RSA', 'n' => $key->n, 'e' => $key->e]);
+        $rsa = \phpseclib3\Crypt\PublicKeyLoader::load($jwk)
+            ->withHash($hashtype)
+            ->withPadding($signatureType === 'PSS' ? \phpseclib3\Crypt\RSA::SIGNATURE_PSS : \phpseclib3\Crypt\RSA::SIGNATURE_PKCS1);
+        if ($signatureType === 'PSS') {
+            $rsa = $rsa->withMGFHash($hashtype);
         }
         return $rsa->verify($payload, $signature);
     }
@@ -1495,7 +1479,7 @@ class OpenIDConnectClient
      * @return bool
      */
     public function canVerifySignatures() {
-        return class_exists('\phpseclib\Crypt\RSA') || class_exists('Crypt_RSA');
+        return class_exists('\phpseclib3\Crypt\PublicKeyLoader');
     }
 
     /**
